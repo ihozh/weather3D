@@ -3,7 +3,14 @@ set -euo pipefail
 
 FORECAST_HOURS="${FORECAST_HOURS:-1 2}"
 LATEST_LOOKBACK="${LATEST_LOOKBACK:-12}"
-PYTHON_BIN="${PYTHON_BIN:-python}"
+# Prefer the project venv if it exists; otherwise fall back to system python3.
+if [ -z "${PYTHON_BIN:-}" ]; then
+  if [ -x ".venv/bin/python" ]; then
+    PYTHON_BIN=".venv/bin/python"
+  else
+    PYTHON_BIN="python3"
+  fi
+fi
 CLEAN_HRRR_GRIB="${CLEAN_HRRR_GRIB:-1}"
 KEEP_HRRR_CYCLES="${KEEP_HRRR_CYCLES:-2}"
 
