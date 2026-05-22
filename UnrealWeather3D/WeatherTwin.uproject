@@ -1,0 +1,19 @@
+{
+  "FileVersion": 3,
+  "EngineAssociation": "5.4",
+  "Category": "Digital Twin",
+  "Description": "South Alabama agricultural weather twin ported from the Three.js prototype.",
+  "Modules": [
+    {
+      "Name": "WeatherTwin",
+      "Type": "Runtime",
+      "LoadingPhase": "Default"
+    }
+  ],
+  "Plugins": [
+    {
+      "Name": "ProceduralMeshComponent",
+      "Enabled": true
+    }
+  ]
+}

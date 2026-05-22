@@ -1,0 +1,13 @@
+{
+  "name": "weather3d-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build-frontend.mjs",
+    "dev": "python3 -m http.server 4173"
+  },
+  "devDependencies": {
+    "esbuild": "^0.23.1"
+  }
+}

@@ -1,0 +1,33 @@
+.DS_Store
+.venv/
+.herbie/
+.herbie_runtime/
+__pycache__/
+*.pyc
+
+# Large local source datasets.
+NationalCSB_2018-2025_rev23/
+2025_30m_cdls/
+*.mp4
+
+# CSB intermediate artifacts (only csb-mesonet-crops.geojson is shipped).
+data/csb-mesonet.geojson
+data/csb-mesonet-simplified.geojson
+
+# HRRR data — all regenerated hourly by build-latest-weather.sh on the VPS.
+# Nothing in data/weather/hrrr/ is checked in; the directory is created on demand.
+data/weather/hrrr/grib/
+data/weather/hrrr/[0-9]*/
+data/weather/hrrr/*.npz
+data/weather/hrrr/*.json
+data/weather/hrrr/volume/
+data/weather/hrrr/wind-volume/
+
+# Build output (regenerable via scripts/build-frontend.mjs)
+dist/
+
+# Node deps (installed on Vercel / local on demand)
+node_modules/
+
+# Local dev preview state
+.claude/launch.json

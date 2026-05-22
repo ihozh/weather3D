@@ -1,0 +1,35 @@
+# Frontend deploy only needs index.html + main.min.js + styles.css.
+# Everything else (backend scripts, data, docs) doesn't need to ship to the CDN.
+
+# Backend & data pipeline
+scripts/
+deploy/
+requirements-hrrr.txt
+.herbie/
+.herbie_runtime/
+
+# Large source datasets (these live on the VPS backend, served via /api/*)
+data/
+NationalCSB_2018-2025_rev23/
+2025_30m_cdls/
+
+# Side projects / experiments
+UnrealWeather3D/
+
+# Docs
+docs/
+README.md
+*.md
+
+# Misc
+*.mp4
+.DS_Store
+.venv/
+__pycache__/
+*.pyc
+.claude/
+.github/
+
+# Source files (only the bundled dist/* is shipped)
+src/
+main.js

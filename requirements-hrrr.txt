@@ -1,0 +1,6 @@
+numpy
+xarray
+cfgrib
+eccodes
+herbie-data
+awscli

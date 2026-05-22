@@ -1,0 +1,14 @@
+[Unit]
+Description=Build latest HRRR browser assets for Weather3D
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/weather3d
+Environment=PYTHON_BIN=/opt/weather3d/.venv/bin/python
+Environment="FORECAST_HOURS=1 2"
+Environment=LATEST_LOOKBACK=12
+Environment=CLEAN_HRRR_GRIB=1
+Environment=KEEP_HRRR_CYCLES=2
+ExecStart=/opt/weather3d/scripts/build-latest-weather.sh

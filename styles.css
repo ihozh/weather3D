@@ -1,0 +1,374 @@
+:root {
+  color-scheme: dark;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  background: #08100d;
+  color: #f5f7ef;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app,
+#terrainContainer {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  overflow: hidden;
+}
+
+#app {
+  position: relative;
+}
+
+#terrainContainer {
+  background: #07110f;
+}
+
+#terrainContainer canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+button {
+  height: 38px;
+  border: 1px solid rgba(245, 247, 239, 0.18);
+  border-radius: 6px;
+  background: rgba(245, 247, 239, 0.08);
+  color: #f5f7ef;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+button:hover,
+button[aria-pressed="true"] {
+  border-color: rgba(167, 211, 125, 0.75);
+  background: rgba(167, 211, 125, 0.18);
+}
+
+.map-label {
+  position: absolute;
+  left: 20px;
+  bottom: 20px;
+  padding: 10px 12px;
+  border: 1px solid rgba(220, 235, 206, 0.18);
+  border-radius: 8px;
+  background: rgba(8, 16, 13, 0.76);
+  color: #e9efe4;
+  font-size: 13px;
+  pointer-events: none;
+}
+
+.map-direction {
+  position: absolute;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(220, 235, 206, 0.22);
+  border-radius: 999px;
+  background: rgba(8, 16, 13, 0.68);
+  color: #f5f7ef;
+  font-size: 12px;
+  font-weight: 800;
+  pointer-events: none;
+}
+
+.map-direction.north {
+  left: 50%;
+  top: 14px;
+  transform: translate(-50%, -50%);
+}
+
+.map-direction.south {
+  left: 50%;
+  top: calc(100% - 14px);
+  transform: translate(-50%, -50%);
+}
+
+.map-direction.west {
+  left: 14px;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.map-direction.east {
+  left: calc(100% - 14px);
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.legend {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  display: grid;
+  gap: 10px;
+  width: min(340px, calc(100vw - 54px));
+  max-height: calc(100vh - 24px);
+  padding: 14px;
+  border: 1px solid rgba(220, 235, 206, 0.18);
+  border-radius: 8px;
+  background: rgba(8, 16, 13, 0.78);
+  backdrop-filter: blur(14px);
+  color: #e9efe4;
+  font-size: 13px;
+  transform: translateX(0);
+  transition: transform 180ms ease, background 180ms ease;
+  z-index: 4;
+  overflow: hidden;
+}
+
+.legend.is-collapsed {
+  width: auto;
+  max-height: none;
+  padding: 6px;
+  gap: 0;
+  border-radius: 999px;
+  background: rgba(8, 16, 13, 0.7);
+}
+
+.legend-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 2px;
+  min-height: 32px;
+}
+
+.legend-header strong {
+  font-size: 13px;
+}
+
+.tool-panel-toggle {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 999px;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.legend.is-collapsed .tool-panel-toggle {
+  transform: rotate(180deg);
+}
+
+.tool-panel-body {
+  display: grid;
+  gap: 10px;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
+  transition: opacity 120ms ease;
+}
+
+.legend.is-collapsed .tool-panel-body,
+.legend.is-collapsed .legend-header strong {
+  display: none;
+}
+
+.legend.is-collapsed .legend-header {
+  padding: 0;
+  min-height: 0;
+  border: none;
+}
+
+.legend-status {
+  display: grid;
+  gap: 2px;
+  padding: 8px 0;
+  border-top: 1px solid rgba(245, 247, 239, 0.12);
+}
+
+.legend-status span {
+  color: #aab6a8;
+  font-size: 12px;
+}
+
+.legend-status strong {
+  color: #f5f7ef;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.view-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.legend div {
+  min-width: 0;
+}
+
+.legend > div:not(.tool-panel-body):not(.legend-status):not(.view-actions):not(.legend-divider):not(.crop-group) {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.legend .crop-group {
+  display: grid;
+  gap: 8px;
+  margin: -2px 0 2px 22px;
+  padding-left: 10px;
+  border-left: 1px solid rgba(248, 255, 184, 0.24);
+}
+
+.control-row,
+.range-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.control-row {
+  justify-content: flex-start;
+}
+
+.control-row span {
+  flex: 1 1 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.control-row input {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  accent-color: #a7d37d;
+}
+
+.range-row {
+  display: grid;
+  grid-template-columns: auto minmax(120px, 1fr);
+  color: #dce8d2;
+}
+
+.range-row input {
+  width: 100%;
+  accent-color: #a7d37d;
+}
+
+.time-row {
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+
+.time-row span {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.time-row strong {
+  color: #f3f9ff;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.legend-divider {
+  height: 1px;
+  background: rgba(245, 247, 239, 0.14);
+}
+
+.legend i {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+}
+
+.legend .station {
+  background: #2f86ff;
+}
+
+.legend .archive {
+  background: #ff4d3d;
+}
+
+.legend .csb {
+  background: #f8ffb8;
+}
+
+.legend .cloud {
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 0 14px rgba(255, 255, 255, 0.34);
+}
+
+.legend .wind {
+  background: #72d7ff;
+}
+
+.legend .rain {
+  width: 8px;
+  border-radius: 4px;
+  background: #d8ecff;
+  box-shadow: 0 0 10px rgba(216, 236, 255, 0.36);
+}
+
+.legend .cotton {
+  background: #d9f0ff;
+}
+
+.legend .peanuts {
+  background: #f5c56b;
+}
+
+.legend .corn {
+  background: #ffd34d;
+}
+
+.legend .soybeans {
+  background: #4db15f;
+}
+
+.legend .pasture {
+  background: #b9d772;
+}
+
+.legend .region {
+  background: #6cc4ff;
+}
+
+.legend .field {
+  background: #72d572;
+}
+
+@media (max-width: 720px) {
+  .legend {
+    top: auto;
+    right: 12px;
+    bottom: 12px;
+    left: 12px;
+    width: auto;
+  }
+
+  .legend.is-collapsed {
+    left: auto;
+    width: auto;
+  }
+}

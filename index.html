@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>South Alabama Agricultural Digital Twin</title>
+    <link rel="stylesheet" href="./styles.css?v=panel-chip-1" />
+  </head>
+  <body>
+    <main id="app">
+      <div id="terrainContainer" aria-label="3D terrain model of the South Alabama Mesonet region"></div>
+      <div class="map-direction north">N</div>
+      <div class="map-direction south">S</div>
+      <div class="map-direction west">W</div>
+      <div class="map-direction east">E</div>
+
+      <aside id="toolPanel" class="legend" aria-label="Legend">
+        <header class="legend-header">
+          <strong>Layer controls</strong>
+          <button id="toolPanelToggle" class="tool-panel-toggle" type="button" aria-label="Collapse toolbar" aria-expanded="true">›</button>
+        </header>
+        <div class="tool-panel-body">
+          <div class="legend-status">
+            <span>Layer</span>
+            <strong id="terrainStatus">Loading DEM + satellite</strong>
+          </div>
+          <div class="legend-status">
+            <span>Weather</span>
+            <strong id="weatherStatus">Checking HRRR manifest</strong>
+          </div>
+          <div class="view-actions">
+            <button id="viewOverview" type="button">Overview</button>
+            <button id="viewLow" type="button">Low</button>
+            <button id="viewTop" type="button">Top</button>
+          </div>
+          <label class="control-row">
+            <input id="toggleStations" type="checkbox" checked />
+            <span><i class="station"></i>Mesonet stations</span>
+          </label>
+          <label class="control-row">
+            <input id="toggleCsbLayer" type="checkbox" checked />
+            <span><i class="csb"></i>CSB field boundaries</span>
+          </label>
+          <div class="crop-group">
+            <label class="control-row">
+              <input id="toggleCropCorn" type="checkbox" checked />
+              <span><i class="corn"></i>Corn</span>
+            </label>
+            <label class="control-row">
+              <input id="toggleCropCotton" type="checkbox" checked />
+              <span><i class="cotton"></i>Cotton</span>
+            </label>
+            <label class="control-row">
+              <input id="toggleCropPeanuts" type="checkbox" checked />
+              <span><i class="peanuts"></i>Peanuts</span>
+            </label>
+            <label class="control-row">
+              <input id="toggleCropSoybeans" type="checkbox" checked />
+              <span><i class="soybeans"></i>Soybeans</span>
+            </label>
+            <label class="control-row">
+              <input id="toggleCropPasture" type="checkbox" checked />
+              <span><i class="pasture"></i>Pasture / hay</span>
+            </label>
+          </div>
+          <div class="legend-divider"></div>
+          <label class="control-row">
+            <input id="toggleCloudLayer" type="checkbox" checked />
+            <span><i class="cloud"></i>HRRR clouds</span>
+          </label>
+          <label class="control-row">
+            <input id="togglePrecipLayer" type="checkbox" checked />
+            <span><i class="rain"></i>HRRR rain</span>
+          </label>
+          <label class="control-row">
+            <input id="toggleWindLayer" type="checkbox" />
+            <span><i class="wind"></i>HRRR wind</span>
+          </label>
+          <div class="legend-divider"></div>
+          <label class="range-row time-row">
+            <span>Weather time <strong id="weatherTimeLabel">Now</strong></span>
+            <input id="weatherTimeSlider" type="range" min="0" max="1000" value="0" step="1" />
+          </label>
+          <div class="legend-divider"></div>
+          <label class="range-row">
+            <span>Cloud density</span>
+            <input id="cloudDensity" type="range" min="1.5" max="9" value="5.4" step="0.1" />
+          </label>
+          <label class="range-row">
+            <span>Cloud cutoff</span>
+            <input id="cloudThreshold" type="range" min="0" max="0.12" value="0.012" step="0.002" />
+          </label>
+          <div class="legend-divider"></div>
+          <div><i class="station"></i>Active Mesonet station</div>
+          <div><i class="archive"></i>Archive-only station</div>
+          <div><i class="region"></i>Regional terrain boundary</div>
+          <div><i class="csb"></i>USDA CSB boundary</div>
+        </div>
+      </aside>
+    </main>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
+        }
+      }
+    </script>
+    <!-- Dev: ./main.js (un-bundled, hot edits) -->
+    <!-- Prod: ./dist/main.min.js (run scripts/build.sh first) -->
+    <script type="module" src="./main.js?v=api-config-1"></script>
+  </body>
+</html>

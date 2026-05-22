@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Weather3D HRRR update hourly
+
+[Timer]
+OnCalendar=*:35:00
+Persistent=true
+RandomizedDelaySec=5m
+Unit=weather3d-hrrr.service
+
+[Install]
+WantedBy=timers.target

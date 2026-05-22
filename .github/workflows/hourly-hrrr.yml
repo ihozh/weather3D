@@ -1,0 +1,51 @@
+name: hourly-hrrr
+
+on:
+  schedule:
+    - cron: "35 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: hourly-hrrr
+  cancel-in-progress: false
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    env:
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
+      R2_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: auto
+      PYTHON_BIN: python
+      FORECAST_HOURS: "1 2"
+      LATEST_LOOKBACK: "12"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libeccodes0
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-hrrr.txt
+
+      - name: Build latest HRRR browser assets
+        run: scripts/build-latest-weather.sh
+
+      - name: Publish static site to R2
+        run: scripts/publish-static-site.sh
