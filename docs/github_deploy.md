@@ -47,7 +47,6 @@ git init -b main
 git add .gitignore .github deploy docs scripts src
 git add README.md index.html main.js styles.css requirements-hrrr.txt
 git add data/csb-mesonet-crops.geojson data/water/usa-detailed-water-bodies.geojson
-git add UnrealWeather3D    # 如果你要带上 UE 项目
 git commit -m "initial commit"
 
 # 创建 GitHub repo(用 gh CLI)
