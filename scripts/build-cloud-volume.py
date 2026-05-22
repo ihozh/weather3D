@@ -38,12 +38,25 @@ def main() -> None:
     args = parse_args()
     frame = np.load(args.frame)
 
-    cloud_water = frame["cloud_water"].astype("float32")
-    cloud_ice = (
-        frame["cloud_ice"].astype("float32")
-        if "cloud_ice" in frame.files
-        else np.zeros_like(cloud_water, dtype="float32")
-    )
+    # HRRR occasionally skips a variable in a specific cycle/forecast hour
+    # (e.g. cloud_water missing while cloud_ice is present). Fall back to a
+    # zero field of the same shape so the build still produces a valid volume.
+    def reference_shape() -> tuple[int, ...]:
+        for key in ("cloud_water", "cloud_ice", "rain_water", "u_wind", "v_wind"):
+            if key in frame.files:
+                return frame[key].shape
+        raise RuntimeError(f"{args.frame} has no usable 3D field")
+
+    shape = reference_shape()
+
+    def load_or_zero(key: str) -> np.ndarray:
+        if key in frame.files:
+            return frame[key].astype("float32")
+        print(f"WARNING: {args.frame.name} missing '{key}', using zeros")
+        return np.zeros(shape, dtype="float32")
+
+    cloud_water = load_or_zero("cloud_water")
+    cloud_ice = load_or_zero("cloud_ice")
 
     # Prepared HRRR pressure levels are ordered low-to-high altitude:
     # 1013 hPa near the surface through 50 hPa in the stratosphere.
