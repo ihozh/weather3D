@@ -1,300 +1,298 @@
-# 实时 3D 云孪生方案
+# Real-Time 3D Cloud Twin Architecture
 
-> 基于 HRRR 数据 + Semi-Lagrangian 平流的小区域实时云渲染方案,适用于 Web 和平板部署。
-
----
-
-## 1. 项目目标
-
-构建一个数字孪生系统,在小区域(单个州尺度,如 Louisiana / Mississippi / Alabama)上实时渲染真实物理一致的 3D 云场。
-
-- **区域范围**:约 500×400 km(一个州大小)
-- **时间精度**:实时滚动,跟随真实天气演化
-- **目标平台**:Web / 平板 / 桌面
-- **视觉目标**:云的位置、形态、运动与真实大气一致
+> Small-region, browser/tablet-deployable cloud rendering based on HRRR data with Semi-Lagrangian advection for sub-hourly time interpolation.
 
 ---
 
-## 2. 数据源:HRRR
+## 1. Goal
 
-### 2.1 基本信息
+Build a digital twin that renders physically consistent 3D cloud fields over a small region (single state, e.g. Louisiana / Mississippi / Alabama) with sub-second visual updates.
 
-- **名称**:HRRR (High-Resolution Rapid Refresh)
-- **运营方**:NOAA
-- **本质**:业务化运行的 WRF-ARW 模式输出
-- **分辨率**:
-  - 水平 3 km
-  - 垂直 50 层
-  - 时间 1 小时更新
-- **覆盖**:CONUS(美国本土)
-- **获取**:免费,AWS Open Data,`s3://noaa-hrrr-bdp-pds/`
-- **推荐库**:[Herbie](https://herbie.readthedocs.io)(Python,支持 partial download)
+- **Region**: ~500×400 km (one US state)
+- **Time**: rolling real time, advances with the actual atmosphere
+- **Target platforms**: Web / tablet / desktop
+- **Visual goal**: cloud position, shape, and motion match real weather
 
-### 2.2 关键变量
+---
 
-| 变量 | 含义 | 用途 |
+## 2. Data Source: HRRR
+
+### 2.1 Basics
+
+- **Name**: HRRR (High-Resolution Rapid Refresh)
+- **Operator**: NOAA
+- **Model core**: operational WRF-ARW
+- **Resolution**:
+  - Horizontal: 3 km
+  - Vertical: 50 levels
+  - Temporal: hourly cycles
+- **Coverage**: CONUS (continental US)
+- **Access**: free, AWS Open Data, `s3://noaa-hrrr-bdp-pds/`
+- **Recommended client**: [Herbie](https://herbie.readthedocs.io) (Python, supports partial download)
+
+### 2.2 Key Variables
+
+| Variable | Meaning | Use |
 |---|---|---|
-| `CLMR` / `QCLOUD` | 云液态水混合比 | 主渲染变量 |
-| `CICE` / `QICE` | 云冰混合比 | 主渲染变量 |
-| `RWMR` / `QRAIN` | 雨水混合比 | 降水可视化 |
-| `UGRD` / `U` | 东西风 | 平流 |
-| `VGRD` / `V` | 南北风 | 平流 |
-| `DZDT` / `W` | 垂直风 | 平流(对流) |
-| `TMP` / `T2` | 温度 | LCL 计算 |
-| `DPT` / `D2` | 露点 | LCL 计算(云底) |
+| `CLMR` / `QCLOUD` | Cloud-liquid mixing ratio | Primary render field |
+| `CICE` / `QICE` | Cloud-ice mixing ratio | Primary render field |
+| `RWMR` / `QRAIN` | Rain water mixing ratio | Precipitation visualization |
+| `UGRD` / `U` | East-west wind | Advection |
+| `VGRD` / `V` | North-south wind | Advection |
+| `DZDT` / `W` | Vertical wind | Advection (convection) |
+| `TMP` / `T2` | Temperature | LCL estimation |
+| `DPT` / `D2` | Dew point | LCL (cloud base) |
 
-### 2.3 F00 vs F01 选择
+### 2.3 F00 vs F01
 
-- **F00**:分析场(数据同化后的最优估计),最实时但有 spin-up 不平衡
-- **F01**:1 小时预报,云场更自洽,视觉更好
-- **推荐**:使用 **F01 + F02** 组合,平衡实时性和视觉质量
+- **F00**: analysis field (best estimate after data assimilation); most current but with spin-up imbalances
+- **F01**: 1-hour forecast; cloud field is more self-consistent, looks better
+- **Recommendation**: use **F01 + F02 paired**, balancing currency and visual quality
 
-### 2.4 数据量估算(一个州)
+### 2.4 Data Volume Estimate (single state)
 
-- 网格数:~22,000(500×400 km / 3 km)
-- 垂直层:50
-- 单帧裸数据:~30 MB(含云水/冰/雨 + 风场)
-- VDB 稀疏化后:**3-8 MB / 帧**
-- 每小时下载:**10-20 MB**(用 Herbie partial)
-- 带宽需求:**< 5 KB/s 持续**,任何网络都够
+- Grid cells: ~22,000 (500×400 km ÷ 3 km)
+- Vertical levels: 50
+- Raw frame: ~30 MB (cloud water/ice/rain + wind)
+- VDB-sparsified: **3-8 MB / frame**
+- Hourly bandwidth: **10-20 MB** (Herbie partial download)
+- Sustained bandwidth: **< 5 KB/s**, fits any network
 
 ---
 
-## 3. 时间插值:Semi-Lagrangian Advection
+## 3. Time Interpolation: Semi-Lagrangian Advection
 
-### 3.1 核心原理
+### 3.1 Core Idea
 
-HRRR 是 1 小时一帧,孪生需要秒级连续。通过**反向追踪平流**在两帧之间插值:
-
-```
-ρ(x, t) = trilinear_sample(ρ_source, x - v·Δt)
-```
-
-**为什么用反向追踪**:
-1. 目标格点天然对齐网格,GPU trilinear 采样硬件加速
-2. 无空洞、无写冲突,完美并行
-3. 无条件稳定(CFL 不限制 dt)
-4. 数学上对 t 连续,不会跳变
-
-### 3.2 双向混合
+HRRR ships one frame per hour; the twin needs second-level continuity. **Backward-trace advection** interpolates between frames:
 
 ```
-α = (t - h0_time) / 3600
-
-ρ(t) = (1-α) · advect(F01, +α·3600, wind) 
-     + α · advect(F02, -(1-α)·3600, wind)
+ρ(x, t) = trilinear_sample(ρ_source, x − v·Δt)
 ```
 
-两端都有锚点,误差最小,自然吸收相变。
+**Why backward tracing**:
+1. Destination grid is aligned, GPU trilinear is hardware-accelerated
+2. No write conflicts, perfectly parallelizable
+3. Unconditionally stable (CFL doesn't bound dt)
+4. Mathematically continuous in t — no jumps
 
-### 3.3 分层平流(关键)
+### 3.2 Bidirectional Blend
 
-**必须每层用自己的风场**,因为大气垂直风切变大(地面 5 m/s,高空 50 m/s 是常见的)。
+```
+α = (t − h0_time) / 3600
 
-每个体素 (x, y, z):
+ρ(t) = (1−α) · advect(F01, +α·3600, wind)
+     + α · advect(F02, −(1−α)·3600, wind)
+```
+
+Two anchor points minimize error and naturally absorb phase changes.
+
+### 3.3 Per-Layer Advection (Critical)
+
+**Each vertical level must use its own wind field** — vertical shear is real (5 m/s near surface, 50 m/s aloft is common).
+
+For each voxel (x, y, z):
 ```
 v = (U[z,y,x], V[z,y,x], W[z,y,x])
-origin = (x, y, z) - v · Δt
+origin = (x, y, z) − v · Δt
 ρ_new[x,y,z] = trilinear_sample(ρ_old, origin)
 ```
 
-这样云会自然剪切、倾斜、形成砧状,而不是像刚体一样整体平移。
+The cloud naturally shears, tilts, and forms anvils — not a rigid translate.
 
-### 3.4 风场和水汽
+### 3.4 Wind Field + Hydrometeors
 
-- `U, V, W` 在 WRF 中是 staggered grid,采样前需 destagger(`wrf-python.destagger`)
-- `QCLOUD`、`QICE`、`QRAIN` 都要同时平流,保持相态一致
-- `QRAIN` 额外加重力下落速度(~5-10 m/s 向下)
+- `U, V, W` in WRF are on a staggered grid — must destagger first (`wrf-python.destagger`)
+- Advect `QCLOUD`, `QICE`, `QRAIN` together to keep phases consistent
+- `QRAIN` adds gravitational fall velocity (~5-10 m/s downward)
 
 ---
 
-## 4. 性能配置
+## 4. Performance Budget
 
-### 4.1 解耦计算与渲染
+### 4.1 Decouple Compute From Render
 
-| 任务 | 频率 | GPU 占用(128³) |
+| Task | Frequency | GPU load (128³) |
 |---|---|---|
-| 数据下载 | 每小时 1 次 | 网络,几秒 |
-| 平流计算 | 每 20 秒 1 次(0.05 Hz) | < 0.5% |
-| 渲染 | 30-60 fps | 30-50%(主要开销) |
+| Data download | 1× / hour | network, seconds |
+| Advection step | 1× / 20 s (0.05 Hz) | < 0.5% |
+| Render | 30-60 fps | 30-50% (dominant cost) |
 
-### 4.2 计算频率选择(20 秒推荐)
+### 4.2 Compute Cadence (20 s is the sweet spot)
 
-| 频率 | GPU 占用 | 视觉效果 | 推荐场景 |
+| Cadence | GPU load | Visual | Suited for |
 |---|---|---|---|
-| 10 秒 | 0.03% | 完美 | 高端设备 |
-| **20 秒** | **0.015%** | **几乎无差别** | **甜点配置** |
-| 30 秒 | 0.01% | 仍流畅 | 低端/省电 |
-| 60 秒 | < 0.01% | 略可察觉滞后 | 极限 |
+| 10 s | 0.03% | Perfect | High-end devices |
+| **20 s** | **0.015%** | **Indistinguishable** | **Sweet spot** |
+| 30 s | 0.01% | Still smooth | Low-end / battery |
+| 60 s | < 0.01% | Slight lag noticeable | Extreme |
 
-20 秒间隔下,一小时算 180 个中间切片,远超 HRRR 网格分辨率所能体现的细节。
+At 20 s, an hour gets 180 intermediate slices — far beyond what HRRR grid resolution can express.
 
-### 4.3 渲染要求
+### 4.3 Rendering Requirements
 
-- **渲染帧率必须 ≥ 30 fps**,否则用户交互(镜头转动)有卡顿感
-- 渲染端每帧在两个最近切片之间做 trilinear 插值(GPU 一条指令)
-- 计算可以慢,渲染不能慢
+- **Render must hit ≥ 30 fps** — anything less feels choppy when rotating the camera
+- The render samples between the two nearest computed slices via GPU trilinear (1 instruction)
+- Compute can be slow; render cannot
 
-### 4.4 平板 GPU 配置
+### 4.4 Tablet GPU Tiers
 
-| 设备 | 推荐配置 |
+| Device | Configuration |
 |---|---|
-| iPad Pro M4 / Tab S10 Ultra | 256³ 体素 + 60fps + 多重散射 |
-| iPad Air M2 / Tab S9 | 128³ + 30-60fps + 单次散射 |
-| 入门平板 | 64-96³ + 30fps + Beer-Lambert |
+| iPad Pro M4 / Tab S10 Ultra | 256³ voxels + 60 fps + multi-scatter |
+| iPad Air M2 / Tab S9 | 128³ + 30-60 fps + single-scatter |
+| Entry-level tablets | 64-96³ + 30 fps + Beer-Lambert only |
 
-平板特殊约束:
-- 发热限频(满载 5-10 分钟后降频 30-50%)
-- 共享内存(3D texture 256³ float32 = 64MB,512³ = 512MB 会爆)
-- 高分屏建议降低渲染分辨率后上采样
+Tablet-specific constraints:
+- Thermal throttling (sustained load → 30-50% perf drop after 5-10 min)
+- Shared memory (256³ float32 3D texture = 64 MB, 512³ = 512 MB blows up)
+- High-DPI screens — render at lower resolution and upscale
 
 ---
 
-## 5. 渲染管线
+## 5. Render Pipeline
 
-### 5.1 数据流
+### 5.1 Data Flow
 
 ```
-[NOAA AWS] ─每小时1次─> [服务器中转]
+[NOAA AWS] ──1×/hour──▶ [Server relay]
                               │
-                              ├─ GRIB2 解码
-                              ├─ 裁切小区域
-                              ├─ 转 VDB / 二进制
-                              └─ 推 CDN
-                              
-[CDN] ─每小时1次─> [客户端]
+                              ├─ GRIB2 decode
+                              ├─ Crop small region
+                              ├─ Convert to VDB / binary
+                              └─ Push to CDN
+
+[CDN] ──1×/hour──▶ [Client]
                        │
-                       ├─ 缓存 F01, F02 两帧
-                       ├─ 上传 GPU 3D texture
+                       ├─ Cache F01, F02 frames
+                       ├─ Upload to GPU 3D textures
                        │
-                       ├─ [计算线程,每 20 秒]
-                       │     └─ Semi-Lagrangian 平流
+                       ├─ [Compute thread, every 20 s]
+                       │     └─ Semi-Lagrangian advection
                        │
-                       └─ [渲染线程,每 16.7 ms]
-                             └─ Raymarching 体渲染
+                       └─ [Render thread, every 16.7 ms]
+                             └─ Volumetric raymarch
                                    ↓
-                                 屏幕
+                                screen
 ```
 
-### 5.2 服务器中转(强烈建议)
+### 5.2 Server Relay (strongly recommended)
 
-不要让客户端直接连 NOAA AWS:
-- ❌ 客户端解 GRIB2 复杂
-- ❌ 整个全美文件 150 MB
-- ❌ 每用户重复下载
+Do NOT have clients hit NOAA AWS directly:
+- ❌ GRIB2 decoding in browser is painful
+- ❌ Full CONUS file is 150 MB
+- ❌ Every user re-downloads the same data
 
-推荐:
-- 服务器每小时拉 HRRR、裁切、转 VDB / float16 二进制
-- 推 CDN(CloudFront / Cloudflare)
-- 客户端拉 3-8 MB 小文件
+Recommended:
+- Server fetches HRRR hourly, crops, converts to VDB / float16 binary
+- Pushes to a CDN (CloudFront / Cloudflare)
+- Clients fetch 3-8 MB cropped slices
 
-### 5.3 渲染技术栈选择
+### 5.3 Render Stack Options
 
-| 平台 | 推荐 |
+| Platform | Recommended |
 |---|---|
-| Web(主要) | **WebGPU**(2024+),fallback WebGL2 |
-| 桌面应用 | Unreal Engine 5 Sparse Volume Texture / Unity HDRP Volumetric Clouds |
-| 移动原生 | iOS Metal / Android Vulkan |
-| 工业孪生 | NVIDIA Omniverse + USD Volumes |
+| Web (primary) | **WebGPU** (2024+), fallback WebGL2 |
+| Desktop app | Unreal Engine 5 Sparse Volume Texture / Unity HDRP Volumetric Clouds |
+| Native mobile | iOS Metal / Android Vulkan |
+| Industrial twin | NVIDIA Omniverse + USD Volumes |
 
-### 5.4 关键渲染细节
+### 5.4 Render Details That Matter
 
-1. **散射模型**:Henyey-Greenstein 相函数 + 至少 2-3 次散射,否则云像棉花糖
-2. **太阳位置**:用 NOAA SPA / SunCalc 算,和 HRRR 时间戳对齐
-3. **云底**:用 `LCL ≈ 125 × (T2 - D2)` 公式估算,或直接用 QCLOUD > 阈值的最低层
-4. **细节补全**:HRRR 3km 看不到单云,叠加 3D Perlin/Worley noise 加湍流细节
+1. **Scattering model**: Henyey-Greenstein phase function + at least 2-3 scattering bounces, otherwise clouds look like cotton candy
+2. **Sun position**: use NOAA SPA / SunCalc, aligned with HRRR timestamp
+3. **Cloud base**: estimate via `LCL ≈ 125 × (T2 − D2)`, or just use the lowest level where `QCLOUD > threshold`
+4. **Sub-3km detail**: HRRR can't resolve individual cumuli — overlay 3D Perlin/Worley noise for turbulent micro-structure
 
 ---
 
-## 6. 冷启动流程
+## 6. Cold Start
 
-### 6.1 用户首次打开 Web
+### 6.1 First-time Web Load
 
 ```javascript
 async function init() {
     showLoading();
-    
+
     const now = new Date();
     const hourFloor = floorToHour(now);  // UTC
-    
-    // 并行下载最新 F01, F02
+
+    // Parallel-fetch the latest F01 and F02
     const [f01, f02] = await Promise.all([
         fetchHRRR(latestRun, hourFloor),
         fetchHRRR(latestRun, hourFloor + 3600000)
     ]);
-    
-    // 上传 GPU
+
+    // Upload to GPU
     const tex_h0 = createTexture3D(f01);
     const tex_h1 = createTexture3D(f02);
-    
-    // 直接跳到当前时刻(semi-Lagrangian stateless)
+
+    // Jump straight to the current moment (semi-Lagrangian is stateless)
     const alpha = (now - hourFloor) / 3600000;
     runAdvection(tex_h0, tex_h1, alpha);
-    
+
     hideLoading();
     startRenderLoop();    // 30-60 fps
-    startComputeLoop();   // 每 20 秒
-    startUpdateLoop();    // 每小时刷新
+    startComputeLoop();   // every 20 s
+    startUpdateLoop();    // every hour
 }
 ```
 
-### 6.2 冷启动时间
+### 6.2 Cold-Start Time Budget
 
-- 数据下载:1-3 秒(从 CDN)
-- 首次平流 + 上传 GPU:< 1 秒
-- 总冷启动:**2-5 秒**
+- Data download: 1-3 s (from CDN)
+- First advection + GPU upload: < 1 s
+- Total: **2-5 s**
 
-### 6.3 数据时区
+### 6.3 Time Zones
 
-HRRR 时间戳是 **UTC**,展示时转本地时间,内部计算用 UTC。
-
----
-
-## 7. 数据刷新与连续性
-
-### 7.1 每小时刷新
-
-```
-12:59:59 → 用 F01(12z)+ F02(13z)平流
-13:00:00 → 用 F02(13z)+ F03(14z)平流
-```
-
-切换瞬间:
-- F02 在两边是同一数据,自然平滑
-- 加 1-2 秒淡入淡出(可选)
-
-### 7.2 边界处理
-
-反推位置超出区域时:
-- 推荐:**Extrapolate**(用边界值外推),最平滑
-- 实际:孪生区域比可视区域大 10-20%,留 buffer
-
-### 7.3 连续性保证
-
-数学上 `ρ(x, t) = trilinear_sample(ρ_source, x - v·Δt)` 对 t 是连续函数,只要做好:
-1. 渲染端在切片间插值(必须)
-2. 数据刷新时无缝过渡
-3. 边界用 extrapolate 而非 zero
-4. CFL 满足 `|v·Δt| < 2·dx`(20 秒 × 50m/s = 1km < 6km,远超安全)
-
-视觉上完全平滑,无跳变。
+HRRR timestamps are **UTC**. Convert to local time for display only; keep math in UTC.
 
 ---
 
-## 8. 物理参考公式
+## 7. Refresh and Continuity
 
-### 8.1 LCL(云底高度)
+### 7.1 Hourly Refresh
 
 ```
-LCL ≈ 125 × (T - Td)  米
+12:59:59 → advect with F01(12z) + F02(13z)
+13:00:00 → advect with F02(13z) + F03(14z)
 ```
 
-- T:地面气温(°C)
-- Td:地面露点(°C)
-- 适用于积云类(Cu / TCu / Cb)
-- 不适用于层云、卷云等
+At the swap moment, F02 is shared between both pairs → naturally smooth. A 1-2 second crossfade is optional.
 
-### 8.2 从混合比到密度
+### 7.2 Boundary Handling
+
+When a traced origin falls outside the region:
+- Recommended: **Extrapolate** with boundary values — smoothest
+- In practice: make the twin region 10-20% larger than the visible region (buffer zone)
+
+### 7.3 Continuity Guarantee
+
+Mathematically, `ρ(x, t) = trilinear_sample(ρ_source, x − v·Δt)` is continuous in t. Just ensure:
+1. Render interpolates between compute slices (mandatory)
+2. Data refresh is seamless
+3. Boundary uses extrapolate, not zero
+4. CFL satisfied: `|v·Δt| < 2·dx` (20 s × 50 m/s = 1 km < 6 km — comfortable)
+
+Result: visually smooth, no jumps.
+
+---
+
+## 8. Physics Reference Formulas
+
+### 8.1 LCL (Cloud Base Height)
+
+```
+LCL ≈ 125 × (T − Td)  meters
+```
+
+- `T`: surface air temperature (°C)
+- `Td`: surface dew point (°C)
+- Valid for cumulus families (Cu / TCu / Cb)
+- NOT valid for stratus, cirrus, etc.
+
+### 8.2 Mixing Ratio → Density
 
 ```python
 Rd = 287.05
@@ -305,19 +303,19 @@ LWC = QCLOUD * rho_air   # kg/m³
 IWC = QICE   * rho_air
 ```
 
-### 8.3 消光系数
+### 8.3 Extinction Coefficient
 
 ```python
-r_eff_liq = 10e-6   # 液云有效粒径,米
-r_eff_ice = 30e-6   # 冰云有效粒径,米
+r_eff_liq = 10e-6   # liquid effective particle radius, m
+r_eff_ice = 30e-6   # ice  effective particle radius, m
 rho_water = 1000
 
 beta_liq = 1.5 * LWC / (rho_water * r_eff_liq)
 beta_ice = 1.5 * IWC / (rho_water * r_eff_ice)
-beta_total = beta_liq + beta_ice   # 1/米
+beta_total = beta_liq + beta_ice   # 1/meter
 ```
 
-### 8.4 露点反算(从 RH)
+### 8.4 Dew Point From RH
 
 ```python
 import math
@@ -328,115 +326,115 @@ Td = b * gamma / (a - gamma)
 
 ---
 
-## 9. 局限与升级路径
+## 9. Limits and Upgrade Paths
 
-### 9.1 HRRR 3km 的局限
+### 9.1 HRRR 3 km Limitations
 
-| 现象 | HRRR 能看到? |
+| Phenomenon | Resolved by HRRR? |
 |---|---|
-| 锋面、MCS、飑线 | ✅ |
-| Cb 整体形态 | ✅ |
-| 层云、卷云大范围 | ✅ |
-| 单个积云(< 3km) | ❌ |
-| 卷云丝缕 | ❌ |
-| 雾、薄海洋层云 | ⚠️ |
+| Fronts, MCS, squall lines | ✅ |
+| Cb overall shape | ✅ |
+| Stratus / cirrus large-scale | ✅ |
+| Individual cumulus (< 3 km) | ❌ |
+| Cirrus filaments | ❌ |
+| Fog, thin marine stratus | ⚠️ |
 
-### 9.2 视觉补救:程序化细节
+### 9.2 Visual Patch: Procedural Detail
 
-在 HRRR 云水场上叠加 3D Perlin / Worley noise:
-- 保持大尺度物理一致
-- 局部加湍流细节
-- 视觉上接近 500m 分辨率
+Overlay 3D Perlin / Worley noise on the HRRR cloud field:
+- Keeps large-scale physics intact
+- Adds turbulent detail locally
+- Approximates ~500 m visual resolution
 
-### 9.3 升级到自跑 WRF
+### 9.3 Upgrade to Self-Run WRF
 
-需要单云细节时:
-- `dx = 500m`,水平嵌套 domain
-- `e_vertical = 60-80` 层
-- `mp_physics = 8`(Thompson)或 `10`(Morrison 2-moment)
-- `bl_pbl_physics = 5`(MYNN2.5,海洋层云首选)
-- 计算量:16-32 核 CPU,一天模拟时间约 2-6 小时
+If you need single-cloud detail:
+- `dx = 500m`, nested horizontal domain
+- `e_vertical = 60-80` levels
+- `mp_physics = 8` (Thompson) or `10` (Morrison 2-moment)
+- `bl_pbl_physics = 5` (MYNN2.5, best for marine stratus)
+- Compute: 16-32 CPU cores, ~2-6 hours of compute per simulated day
 
-### 9.4 实时性升级
+### 9.4 Latency Upgrade
 
-HRRR 本身滞后 1-1.5 小时(模式跑完 + 上传)。如需更"现在":
-- 叠加 **GOES-16 ABI**(5-10 分钟更新,云顶高度场)做水平位置 nudging
-- 接 **ML nowcasting** 模型(DGMR / MetNet-3)外推 0-60 分钟
-- 未来切到 **RRFS**(HRRR 后继,15 分钟更新)
+HRRR itself lags 1-1.5 hours (model run + upload). For "now":
+- Overlay **GOES-16 ABI** (5-10 min cadence, cloud-top height) for horizontal nudging
+- Drive **ML nowcasting** (DGMR / MetNet-3) for 0-60 min extrapolation
+- Migrate to **RRFS** (HRRR successor, 15-min cadence)
 
 ---
 
-## 10. 实施优先级
+## 10. Implementation Priority
 
-### Phase 1:最小可行(1-2 周)
+### Phase 1: Minimum Viable (1-2 weeks)
 
-1. ✅ 用 Herbie 拉 HRRR partial,只取 LA/MS/AL 区域
-2. ✅ 转 VDB,本地 Blender 渲一帧验证
-3. ✅ 跑通 "数据 → 渲染" 链路
+1. ✅ Herbie pulls HRRR partial, crop to LA/MS/AL
+2. ✅ Convert to VDB, render one frame in Blender to validate
+3. ✅ End-to-end "data → render" smoke test
 
-### Phase 2:实时孪生核心(2-4 周)
+### Phase 2: Real-Time Twin Core (2-4 weeks)
 
-1. ✅ 服务器端定时下载 + 转格式 + 推 CDN
-2. ✅ Web 客户端拉数据 + 上传 GPU
-3. ✅ Semi-Lagrangian 平流 compute shader
-4. ✅ Raymarching 体渲染 shader
-5. ✅ 渲染端切片插值
-6. ✅ 冷启动逻辑
+1. ✅ Server downloads + converts + pushes to CDN on schedule
+2. ✅ Web client fetches + uploads to GPU
+3. ✅ Semi-Lagrangian advection compute shader
+4. ✅ Raymarching volume render shader
+5. ✅ Render-side slice interpolation
+6. ✅ Cold-start logic
 
-### Phase 3:视觉与体验(2-4 周)
+### Phase 3: Polish (2-4 weeks)
 
-1. ✅ 多重散射
-2. ✅ 太阳位置同步
-3. ✅ Noise 细节补全
-4. ✅ 平板适配,动态降级
-5. ✅ Loading 体验优化
+1. ✅ Multi-scattering
+2. ✅ Sun position sync
+3. ✅ Procedural noise detail
+4. ✅ Tablet adaptation, dynamic quality
+5. ✅ Loading UX
 
-### Phase 4:升级路径(按需)
+### Phase 4: Upgrades (when needed)
 
-- GOES 校正
+- GOES correction
 - ML nowcasting
-- 自跑 WRF 高分辨率
+- Self-run high-res WRF
 
 ---
 
-## 11. 关键技术参数速查
+## 11. Cheat Sheet
 
-| 参数 | 推荐值 | 备注 |
+| Parameter | Recommended | Notes |
 |---|---|---|
-| 数据源 | HRRR F01 + F02 | NOAA AWS |
-| 数据更新频率 | 1 小时 | HRRR 原生 |
-| 区域大小 | 一个州(~500×400 km) | sweet spot |
-| 水平分辨率 | 3 km | HRRR 原生 |
-| 垂直层 | 50 | HRRR 原生 |
-| 平流计算频率 | **每 20 秒** | 视觉无损,GPU 几乎免费 |
-| 渲染帧率 | 30-60 fps | 必须流畅 |
-| 体素分辨率 | 128³(中端)/ 256³(高端) | 平板 128³ |
-| 单帧数据(裸) | ~30 MB | 全变量 |
-| 单帧数据(VDB) | 3-8 MB | 稀疏化后 |
-| 客户端带宽 | < 5 KB/s 持续 | 每小时一次小下载 |
-| 冷启动时间 | 2-5 秒 | CDN 加速 |
-| CFL 约束 | `\|v·Δt\| < 2·dx` | 20s × 50m/s = 1km < 6km ✅ |
+| Data source | HRRR F01 + F02 | NOAA AWS |
+| Update cadence | 1 hour | HRRR-native |
+| Region | one state (~500×400 km) | sweet spot |
+| Horizontal res | 3 km | HRRR-native |
+| Vertical levels | 50 | HRRR-native |
+| Advection cadence | **20 s** | Visually free, GPU near-zero |
+| Render frame rate | 30-60 fps | Must stay smooth |
+| Voxel res | 128³ (mid) / 256³ (high) | tablets stay at 128³ |
+| Raw frame | ~30 MB | all variables |
+| VDB frame | 3-8 MB | sparsified |
+| Client bandwidth | < 5 KB/s sustained | hourly small fetch |
+| Cold start | 2-5 s | CDN-accelerated |
+| CFL constraint | `\|v·Δt\| < 2·dx` | 20 s × 50 m/s = 1 km < 6 km ✅ |
 
 ---
 
-## 12. 关键库与工具
+## 12. Key Libraries and Tools
 
-| 用途 | 工具 |
+| Use | Tool |
 |---|---|
-| HRRR 数据拉取 | [Herbie](https://herbie.readthedocs.io)(Python) |
-| GRIB2 解码 | cfgrib, xarray, wgrib2 |
-| WRF 数据处理 | wrf-python(NCAR 官方) |
-| 气象计算 | MetPy |
-| 体积数据格式 | OpenVDB / NanoVDB |
-| 科学可视化 | VAPOR(NCAR,可直接读 wrfout) |
-| Web 渲染 | WebGPU + Three.js |
-| 桌面渲染 | Unreal Engine 5 / Unity HDRP / NVIDIA Omniverse |
-| 离线高质量 | Houdini / Blender Cycles |
+| HRRR fetch | [Herbie](https://herbie.readthedocs.io) (Python) |
+| GRIB2 decode | cfgrib, xarray, wgrib2 |
+| WRF data processing | wrf-python (NCAR official) |
+| Meteorological math | MetPy |
+| Volume format | OpenVDB / NanoVDB |
+| Scientific viz | VAPOR (NCAR, reads wrfout directly) |
+| Web render | WebGPU + Three.js |
+| Desktop render | Unreal Engine 5 / Unity HDRP / NVIDIA Omniverse |
+| Offline high-quality | Houdini / Blender Cycles |
 
 ---
 
-## 13. 一句话总结
+## 13. One-Sentence Summary
 
-**用 HRRR 每小时拉云水场和风场作为骨架,在本地 GPU 用 Semi-Lagrangian 反向追踪平流做秒级时间插值,Raymarching 体渲染输出,小区域(一个州)在平板上 30-60 fps 实时跑得动。**
+**Pull HRRR cloud water and wind fields hourly as the skeleton, do Semi-Lagrangian backward-trace advection on the local GPU for second-level interpolation, render with raymarching — a single state runs at 30-60 fps on a tablet.**
 
-数据网络成本极低,计算可解耦到 20 秒一次,视觉上连续平滑,物理上一致。
+Network cost is tiny, compute can run every 20 s, time is visually continuous and physically consistent.
